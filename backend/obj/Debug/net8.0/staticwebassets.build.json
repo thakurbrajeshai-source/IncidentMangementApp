@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "Bdgz5IXGHBqY6J1E1m3iLyHur6wlUlodWCpqBkZoe5o=",
+  "Source": "IncidentManagement.Api",
+  "BasePath": "_content/IncidentManagement.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

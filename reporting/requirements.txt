@@ -1,0 +1,16 @@
+# Python reporting job dependencies.
+#
+# In dev (SQLite): only pandas + openpyxl + python-pptx are needed.
+# In production (MS SQL): add pyodbc + sqlalchemy so we can connect via
+# the standard MS SQL ODBC driver.
+#
+# Install dev:
+#   pip install -r requirements.txt
+# Install prod (add these to requirements-prod.txt in deployment):
+#   pip install pyodbc SQLAlchemy
+
+pandas>=2.2.0
+openpyxl>=3.1.5
+python-pptx>=1.0.2
+# pyodbc>=5.2.0        ; sys_platform == "win32"
+# SQLAlchemy>=2.0.30   ; sys_platform == "win32"

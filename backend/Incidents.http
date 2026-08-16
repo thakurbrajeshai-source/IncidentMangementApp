@@ -1,0 +1,68 @@
+### Smoke test for the Incident Management API.
+### Open in VS Code with the "REST Client" extension (humao.rest-client), or use
+### any HTTP client. Replace {{token}} with the value returned from /verify-otp.
+
+@host = http://localhost:5080
+@json = application/json
+
+### 1. Request an OTP for a seeded admin (always returns 123456 in dev)
+# @name requestOtp
+POST {{host}}/api/auth/request-otp
+Content-Type: {{json}}
+
+{ "mobile": "+91 90000 00099" }
+
+### 2. Verify the OTP -> get a JWT
+# @name verifyOtp
+POST {{host}}/api/auth/verify-otp
+Content-Type: {{json}}
+
+{ "mobile": "+91 90000 00099", "otp": "123456" }
+
+###
+@token = {{verifyOtp.response.body.accessToken}}
+
+### 3. Get the current user
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### 4. List categories
+GET {{host}}/api/categories
+Authorization: Bearer {{token}}
+
+### 5. List incidents (Admin sees all)
+GET {{host}}/api/incidents
+Authorization: Bearer {{token}}
+
+### 6. Admin status counts
+GET {{host}}/api/incidents/status-counts
+Authorization: Bearer {{token}}
+
+### 7. Reporter self-register (new mobile) + first incident
+# @name reporterOtp
+POST {{host}}/api/auth/request-otp
+Content-Type: {{json}}
+
+{ "mobile": "9999988888" }
+
+###
+POST {{host}}/api/auth/verify-otp
+Content-Type: {{json}}
+
+{
+  "mobile": "9999988888",
+  "otp": "123456",
+  "firstName": "Test",
+  "lastName": "Reporter",
+  "email": "test@example.com"
+}
+
+###
+@reporterToken = {{reporterOtp.response.body.accessToken}}
+
+###
+POST {{host}}/api/incidents
+Authorization: Bearer {{reporterToken}}
+Content-Type: {{json}}
+
+{ "categoryId": 6, "description": "App is throwing a 500 on the dashboard load" }

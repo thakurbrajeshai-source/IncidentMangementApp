@@ -102,6 +102,31 @@ export const api = {
   workflowRuns: () => call<RunSummary[]>("GET", "/workflows/runs"),
   workflowRunDetail: (runId: string) => call<RunDetail>("GET", `/workflows/runs/${runId}`),
   incidentWorkflowOutputs: (incidentId: string) => call<IncidentRunOutput[]>("GET", `/incidents/${incidentId}/workflow-outputs`),
+
+  // Workflow-category assignment
+  setWorkflowCategories: (id: string, categoryIds: number[]) =>
+    call("PUT", `/workflows/${id}/categories`, { categoryIds }),
+
+  // Attach workflow to incident (Resolver/Admin)
+  attachWorkflow: (incidentId: string, workflowId: string, inputs: Record<string, string> = {}) =>
+    call<{ runId: string; status: string }>("POST", "/workflows/attach", { incidentId, workflowId, inputs }),
+
+  // Toggle workflow visibility in comments
+  setWorkflowVisibility: (incidentId: string, workflowId: string, visible: boolean) =>
+    call("PUT", "/workflows/visibility", { incidentId, workflowId, visible }),
+
+  // Available workflows to attach
+  availableWorkflows: () => call<AvailableWorkflow[]>("GET", "/workflows/available"),
+
+  // Reporter: run workflow on own ticket
+  runWorkflowOnTicket: (incidentId: string, workflowId: string, inputs: Record<string, string> = {}) =>
+    call<{ runId: string; status: string }>("POST", `/incidents/${incidentId}/run-workflow`, { workflowId, inputs }),
+
+  // Per-user-per-ticket run count
+  runCount: (incidentId: string) => call<RunCountResponse>("GET", `/incidents/${incidentId}/run-count`),
+
+  // Default workflow for a category
+  defaultWorkflow: (categoryId: number) => call<DefaultWorkflow | null>("GET", `/incidents/default-workflow/${categoryId}`),
 };
 
 export type IncidentStatus = "Open" | "InProgress" | "Resolved" | "Closed" | "Rejected" | "Reopened";
@@ -133,6 +158,7 @@ export interface Incident {
   closedAt: string | null;
   revertCount: number;
   comments: Comment[];
+  attachedWorkflows?: AttachedWorkflow[];
 }
 
 export interface Notification {
@@ -183,6 +209,7 @@ export interface Workflow {
   inputCount?: number;
   inputs?: WorkflowInput[];
   steps?: WorkflowStep[];
+  categories?: { id: number; name: string }[];
 }
 
 export interface WorkflowSave {
@@ -233,5 +260,34 @@ export interface IncidentRunOutput {
   status: WorkflowRunStatus;
   startedAt: string;
   triggeredByFullName: string;
+  visibleInComments: boolean;
   steps: RunStepOutput[];
+}
+
+export interface AttachedWorkflow {
+  workflowId: string;
+  workflowName: string;
+  visibleInComments: boolean;
+  attachedById: string;
+  attachedByFullName: string;
+  attachedAt: string;
+}
+
+export interface DefaultWorkflow {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  inputs: WorkflowInput[];
+}
+
+export interface AvailableWorkflow {
+  id: string;
+  name: string;
+  description: string;
+  inputCount: number;
+}
+
+export interface RunCountResponse {
+  runCount: number;
 }

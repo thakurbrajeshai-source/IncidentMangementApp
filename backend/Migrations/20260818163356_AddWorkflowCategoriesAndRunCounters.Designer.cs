@@ -3,6 +3,7 @@ using System;
 using IncidentManagement.Api.Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IncidentManagement.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260818163356_AddWorkflowCategoriesAndRunCounters")]
+    partial class AddWorkflowCategoriesAndRunCounters
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.10");
@@ -355,39 +358,6 @@ namespace IncidentManagement.Api.Migrations
                     b.ToTable("WorkflowCategories", (string)null);
                 });
 
-            modelBuilder.Entity("IncidentManagement.Api.Domain.WorkflowIncidentAssignment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("AttachedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("AttachedById")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("IncidentId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("VisibleInComments")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("WorkflowId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AttachedById");
-
-                    b.HasIndex("WorkflowId");
-
-                    b.HasIndex("IncidentId", "WorkflowId")
-                        .IsUnique();
-
-                    b.ToTable("WorkflowIncidentAssignments", (string)null);
-                });
-
             modelBuilder.Entity("IncidentManagement.Api.Domain.WorkflowInput", b =>
                 {
                     b.Property<Guid>("Id")
@@ -709,33 +679,6 @@ namespace IncidentManagement.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Category");
-
-                    b.Navigation("Workflow");
-                });
-
-            modelBuilder.Entity("IncidentManagement.Api.Domain.WorkflowIncidentAssignment", b =>
-                {
-                    b.HasOne("IncidentManagement.Api.Domain.User", "AttachedBy")
-                        .WithMany()
-                        .HasForeignKey("AttachedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("IncidentManagement.Api.Domain.Incident", "Incident")
-                        .WithMany()
-                        .HasForeignKey("IncidentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IncidentManagement.Api.Domain.Workflow", "Workflow")
-                        .WithMany()
-                        .HasForeignKey("WorkflowId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AttachedBy");
-
-                    b.Navigation("Incident");
 
                     b.Navigation("Workflow");
                 });

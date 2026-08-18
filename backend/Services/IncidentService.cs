@@ -60,7 +60,7 @@ public class IncidentService
             .OrderByDescending(i => i.CreatedAt)
             .ToListAsync(ct);
 
-    public Task<Incident?> GetAsync(Guid id, CancellationToken ct = default)
+    public Task<Incident?> GetEntityAsync(Guid id, CancellationToken ct = default)
         => _db.Incidents
             .Include(i => i.Category)
             .Include(i => i.Reporter)
@@ -69,6 +69,74 @@ public class IncidentService
             .Include(i => i.Comments).ThenInclude(c => c.Author)
             .Include(i => i.Assignments).ThenInclude(a => a.Resolver)
             .FirstOrDefaultAsync(i => i.Id == id, ct);
+
+    public async Task<object?> GetAsync(Guid id, CancellationToken ct = default)
+    {
+        var i = await _db.Incidents
+            .Include(i => i.Category)
+            .Include(i => i.Reporter)
+            .Include(i => i.CurrentAssignee)
+            .Include(i => i.RejectedBy)
+            .Include(i => i.Comments).ThenInclude(c => c.Author)
+            .Include(i => i.Assignments).ThenInclude(a => a.Resolver)
+            .FirstOrDefaultAsync(i => i.Id == id, ct);
+        if (i is null) return null;
+
+        // Attached workflows with visibility
+        var attachments = await _db.WorkflowIncidentAssignments
+            .Include(a => a.Workflow)
+            .Include(a => a.AttachedBy)
+            .Where(a => a.IncidentId == id)
+            .ToListAsync(ct);
+
+        return new
+        {
+            i.Id,
+            i.TicketRef,
+            i.ReporterId,
+            Reporter = i.Reporter,
+            i.CategoryId,
+            Category = new { i.Category.Id, i.Category.Name },
+            i.Description,
+            Status = i.Status.ToString(),
+            i.CurrentAssigneeId,
+            CurrentAssignee = i.CurrentAssignee,
+            i.RejectionReason,
+            RejectedBy = i.RejectedBy,
+            i.CreatedAt,
+            i.ResolvedAt,
+            i.ClosedAt,
+            i.RejectedAt,
+            i.RevertCount,
+            Comments = i.Comments.OrderBy(c => c.CreatedAt).Select(c => new
+            {
+                c.Id,
+                c.IncidentId,
+                c.AuthorId,
+                Author = c.Author,
+                c.Message,
+                c.TaggedUserIds,
+                c.CreatedAt,
+            }),
+            Assignments = i.Assignments.OrderBy(a => a.AssignedAt).Select(a => new
+            {
+                a.Id,
+                a.ResolverId,
+                Resolver = a.Resolver,
+                AssignmentType = a.AssignmentType.ToString(),
+                a.AssignedAt,
+            }),
+            AttachedWorkflows = attachments.Select(a => new
+            {
+                workflowId = a.WorkflowId,
+                workflowName = a.Workflow.Name,
+                visibleInComments = a.VisibleInComments,
+                attachedById = a.AttachedById,
+                attachedByFullName = a.AttachedBy.FullName,
+                attachedAt = a.AttachedAt,
+            }),
+        };
+    }
 
     // ----- Status counts (admin dashboard) ---------------------------------
 

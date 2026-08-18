@@ -46,7 +46,7 @@ public class WorkflowExecutionService
         string TriggeredByFullName, int? FailedStepOrder, string? ErrorMessage, List<RunStepOutputDto> Steps);
 
     public record IncidentRunOutputDto(Guid RunId, string WorkflowName, string Status,
-        DateTime StartedAt, string TriggeredByFullName, List<RunStepOutputDto> Steps);
+        DateTime StartedAt, string TriggeredByFullName, bool VisibleInComments, List<RunStepOutputDto> Steps);
 
     // ----- Execution --------------------------------------------------------
 
@@ -76,6 +76,28 @@ public class WorkflowExecutionService
         };
         _db.WorkflowRuns.Add(run);
         await _db.SaveChangesAsync(ct);
+
+        // Per-user-per-ticket run counter (PRD 6b) — increment at start of every run
+        if (incidentId is Guid incId)
+        {
+            var counter = await _db.WorkflowRunCounters
+                .FirstOrDefaultAsync(c => c.UserId == triggeredBy && c.IncidentId == incId, ct);
+            if (counter is null)
+            {
+                counter = new WorkflowRunCounter
+                {
+                    UserId = triggeredBy,
+                    IncidentId = incId,
+                    Count = 1,
+                };
+                _db.WorkflowRunCounters.Add(counter);
+            }
+            else
+            {
+                counter.Count += 1;
+            }
+            await _db.SaveChangesAsync(ct);
+        }
 
         try
         {
@@ -247,9 +269,14 @@ public class WorkflowExecutionService
     }
 
     /// <summary>Rendered step tables for every run attached to an incident —
-    /// used to render workflow output inline in the ticket thread.</summary>
+    /// used to render workflow output inline in the ticket thread.
+    /// Respects VisibleInComments flag from WorkflowIncidentAssignment.</summary>
     public async Task<List<IncidentRunOutputDto>> GetIncidentOutputsAsync(Guid incidentId, CancellationToken ct = default)
     {
+        var assignments = await _db.WorkflowIncidentAssignments
+            .Where(wa => wa.IncidentId == incidentId)
+            .ToDictionaryAsync(wa => wa.WorkflowId, wa => wa.VisibleInComments, ct);
+
         var runs = await _db.WorkflowRuns
             .Where(r => r.IncidentId == incidentId)
             .Include(r => r.Workflow)
@@ -263,7 +290,69 @@ public class WorkflowExecutionService
             r.Status.ToString(),
             r.StartedAt,
             r.TriggeredBy.FullName,
+            assignments.TryGetValue(r.WorkflowId, out var vis) ? vis : true,
             r.StepResults.OrderBy(s => s.StepOrder).Select(ToStepOutput).ToList())).ToList();
+    }
+
+    /// <summary>Attaches a workflow to an incident and runs it immediately.</summary>
+    public async Task<Guid> AttachAndRunAsync(Guid incidentId, Guid workflowId, Guid triggeredBy,
+        Dictionary<string, string> inputs, CancellationToken ct = default)
+    {
+        var incident = await _db.Incidents.FirstOrDefaultAsync(i => i.Id == incidentId, ct)
+            ?? throw new KeyNotFoundException("Incident not found.");
+
+        // Upsert the assignment (visible by default)
+        var existing = await _db.WorkflowIncidentAssignments
+            .FirstOrDefaultAsync(a => a.IncidentId == incidentId && a.WorkflowId == workflowId, ct);
+        if (existing is null)
+        {
+            _db.WorkflowIncidentAssignments.Add(new WorkflowIncidentAssignment
+            {
+                WorkflowId = workflowId,
+                IncidentId = incidentId,
+                AttachedById = triggeredBy,
+                VisibleInComments = true,
+                AttachedAt = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return await RunAsync(workflowId, triggeredBy, incidentId, inputs, ct);
+    }
+
+    /// <summary>Toggles the VisibleInComments flag for a workflow attachment on an incident.</summary>
+    public async Task SetWorkflowVisibilityAsync(Guid incidentId, Guid workflowId, bool visible, CancellationToken ct = default)
+    {
+        var assignment = await _db.WorkflowIncidentAssignments
+            .FirstOrDefaultAsync(a => a.IncidentId == incidentId && a.WorkflowId == workflowId, ct)
+            ?? throw new KeyNotFoundException("Workflow is not attached to this incident.");
+        assignment.VisibleInComments = visible;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Returns the per-user-per-ticket run count for a given incident.</summary>
+    public async Task<int> GetRunCountAsync(Guid userId, Guid incidentId, CancellationToken ct = default)
+    {
+        var counter = await _db.WorkflowRunCounters
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.IncidentId == incidentId, ct);
+        return counter?.Count ?? 0;
+    }
+
+    /// <summary>Returns the list of workflows available to attach to a ticket (active, Resolver/Admin accessible).</summary>
+    public async Task<List<object>> GetAvailableWorkflowsAsync(CancellationToken ct = default)
+    {
+        var workflows = await _db.Workflows
+            .Include(w => w.CreatedBy)
+            .Where(w => w.IsActive)
+            .OrderByDescending(w => w.CreatedAt)
+            .ToListAsync(ct);
+        return workflows.Select(w => (object)new
+        {
+            id = w.Id,
+            name = w.Name,
+            description = w.Description,
+            inputCount = _db.WorkflowInputs.Count(i => i.WorkflowId == w.Id),
+        }).ToList();
     }
 
     private static RunSummaryDto ToSummary(WorkflowRun r) => new(

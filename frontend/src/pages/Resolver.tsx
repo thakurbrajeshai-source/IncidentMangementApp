@@ -3,6 +3,7 @@ import { Topbar } from "./Topbar";
 import { api, type Incident, type User } from "../api";
 import { useNavigate } from "react-router-dom";
 import { WorkflowOutputs } from "../components/WorkflowOutputs";
+import { MentionInput } from "../components/MentionInput";
 
 // Resolver dashboard: 3 panels (unassigned pool | my tickets | conversation thread).
 // Selecting a ticket in either left panel loads the thread on the right.
@@ -86,7 +87,6 @@ export function Resolver() {
 function Thread({ incidentId }: { incidentId: string }) {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [msg, setMsg] = useState("");
-  const [tagInput, setTagInput] = useState("");
   const [tagged, setTagged] = useState<string[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const me = JSON.parse(localStorage.getItem("im_user")!);
@@ -95,14 +95,6 @@ function Thread({ incidentId }: { incidentId: string }) {
   useEffect(() => { load(); api.users().then(setUsers); }, [incidentId]);
 
   if (!incident) return <p style={{ color: "var(--text-soft)" }}>Loading…</p>;
-
-  function addTag(name: string) {
-    const u = users.find(x => x.fullName.toLowerCase().startsWith(name.toLowerCase()) || x.firstName.toLowerCase().startsWith(name.toLowerCase()));
-    if (u && !tagged.includes(u.id) && u.id !== me.id) {
-      setTagged([...tagged, u.id]);
-      setTagInput("");
-    }
-  }
 
   async function send() {
     if (!msg.trim()) return;
@@ -126,35 +118,13 @@ function Thread({ incidentId }: { incidentId: string }) {
         })}
         {incident.comments?.length === 0 && <p style={{ color: "var(--text-soft)", fontSize: 12 }}>No messages yet.</p>}
       </div>
-      <div className="reply-row">
-        <input
-          placeholder="Reply or @tag someone…"
-          value={tagInput + msg}
-          onChange={e => {
-            const v = e.target.value;
-            if (v.endsWith("@")) { setTagInput(v); setMsg(""); return; }
-            // The simplest model: user types @ then a name; we parse trailing @-prefix.
-            const at = v.lastIndexOf("@");
-            if (at >= 0 && !v.slice(at).includes(" ")) { setTagInput(v.slice(at + 1)); setMsg(v.slice(0, at)); return; }
-            setMsg(v);
-          }}
-          onKeyDown={e => { if (e.key === "Enter") send(); }}
-        />
-        {tagInput && (
-          <div style={{ position: "absolute", background: "white", border: "0.5px solid var(--border)", borderRadius: "var(--radius)", marginTop: 30 }}>
-            {users.filter(u => u.fullName.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 5).map(u => (
-              <div key={u.id} style={{ padding: "4px 8px", cursor: "pointer" }} onClick={() => { addTag(u.firstName); setMsg((m) => m + " @" + u.firstName + " "); }}>
-                {u.fullName} <span style={{ color: "var(--text-soft)", fontSize: 10 }}>· {u.role}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <button className="primary" onClick={send}>Send</button>
-      </div>
-      {tagged.length > 0 && (
-        <p style={{ fontSize: 11, color: "var(--text-soft)", marginTop: 4 }}>Tagging: {taggedNames(tagged, users)}</p>
-      )}
-      <WorkflowOutputs incidentId={incidentId} />
+      <MentionInput
+        users={users} meId={me.id}
+        value={msg} onChange={setMsg} onSend={send}
+        tagged={tagged} onTaggedChange={setTagged}
+        placeholder="Reply or @tag someone…"
+      />
+      <WorkflowOutputs incidentId={incidentId} role={me.role} />
     </>
   );
 }

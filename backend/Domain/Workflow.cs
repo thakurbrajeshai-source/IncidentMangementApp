@@ -18,4 +18,5 @@ public class Workflow
     public ICollection<WorkflowStep> Steps { get; set; } = new List<WorkflowStep>();
     public ICollection<WorkflowInput> Inputs { get; set; } = new List<WorkflowInput>();
     public ICollection<WorkflowRun> Runs { get; set; } = new List<WorkflowRun>();
+    public ICollection<WorkflowCategory> Categories { get; set; } = new List<WorkflowCategory>();
 }

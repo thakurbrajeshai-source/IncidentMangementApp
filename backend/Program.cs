@@ -96,6 +96,19 @@ builder.Services.AddHostedService<IncidentManagement.Api.Infrastructure.Jobs.Aut
 // App services
 builder.Services.AddAppServices();
 
+// CORS — restrict in production to known origins
+builder.Services.AddCors(opts =>
+{
+    opts.AddDefaultPolicy(policy =>
+    {
+        var origins = cfg.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        if (origins is { Length: > 0 })
+            policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+        else
+            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    });
+});
+
 var app = builder.Build();
 
 // ----- Pipeline -------------------------------------------------------------
@@ -110,6 +123,10 @@ if (app.Environment.IsDevelopment())
     SeedData.Run(db);
 }
 
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

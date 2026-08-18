@@ -18,6 +18,9 @@ public class AppDbContext : DbContext
     public DbSet<WorkflowInput> WorkflowInputs => Set<WorkflowInput>();
     public DbSet<WorkflowRun> WorkflowRuns => Set<WorkflowRun>();
     public DbSet<WorkflowStepResult> WorkflowStepResults => Set<WorkflowStepResult>();
+    public DbSet<WorkflowCategory> WorkflowCategories => Set<WorkflowCategory>();
+    public DbSet<WorkflowRunCounter> WorkflowRunCounters => Set<WorkflowRunCounter>();
+    public DbSet<WorkflowIncidentAssignment> WorkflowIncidentAssignments => Set<WorkflowIncidentAssignment>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -168,6 +171,40 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Run).WithMany(r => r.StepResults)
                 .HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.RunId, x.StepOrder });
+        });
+
+        b.Entity<WorkflowCategory>(e =>
+        {
+            e.ToTable("WorkflowCategories");
+            e.HasKey(x => new { x.WorkflowId, x.CategoryId });
+            e.HasOne(x => x.Workflow).WithMany(w => w.Categories)
+                .HasForeignKey(x => x.WorkflowId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Category).WithMany(c => c.Workflows)
+                .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<WorkflowRunCounter>(e =>
+        {
+            e.ToTable("WorkflowRunCounters");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.IncidentId }).IsUnique();
+            e.HasOne(x => x.User).WithMany()
+                .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Incident).WithMany()
+                .HasForeignKey(x => x.IncidentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<WorkflowIncidentAssignment>(e =>
+        {
+            e.ToTable("WorkflowIncidentAssignments");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Workflow).WithMany()
+                .HasForeignKey(x => x.WorkflowId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Incident).WithMany()
+                .HasForeignKey(x => x.IncidentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.AttachedBy).WithMany()
+                .HasForeignKey(x => x.AttachedById).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.IncidentId, x.WorkflowId }).IsUnique();
         });
     }
 }

@@ -36,6 +36,7 @@ public class WorkflowService
     {
         var rows = await _db.Workflows
             .Include(w => w.CreatedBy)
+            .Include(w => w.Categories).ThenInclude(wc => wc.Category)
             .OrderByDescending(w => w.CreatedAt)
             .ToListAsync(ct);
         return rows.Select(w => (object)new
@@ -49,6 +50,7 @@ public class WorkflowService
             createdByFullName = w.CreatedBy.FullName,
             stepCount = _db.WorkflowSteps.Count(s => s.WorkflowId == w.Id),
             inputCount = _db.WorkflowInputs.Count(i => i.WorkflowId == w.Id),
+            categories = w.Categories.Select(wc => new { id = wc.CategoryId, name = wc.Category.Name }).ToList(),
         }).ToList();
     }
 
@@ -237,5 +239,53 @@ public class WorkflowService
         {
             return new Dictionary<string, string>();
         }
+    }
+
+    // ----- Category assignment (default check per PRD 6a) -------------------
+
+    public async Task SetCategoriesAsync(Guid workflowId, List<int> categoryIds, CancellationToken ct = default)
+    {
+        var w = await _db.Workflows.FirstOrDefaultAsync(x => x.Id == workflowId, ct)
+            ?? throw new KeyNotFoundException("Workflow not found.");
+
+        await _db.WorkflowCategories.Where(wc => wc.WorkflowId == workflowId).ExecuteDeleteAsync(ct);
+
+        foreach (var catId in categoryIds.Distinct())
+        {
+            _db.WorkflowCategories.Add(new WorkflowCategory
+            {
+                WorkflowId = workflowId,
+                CategoryId = catId,
+            });
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<object?> GetDefaultWorkflowForCategoryAsync(int categoryId, CancellationToken ct = default)
+    {
+        var wc = await _db.WorkflowCategories
+            .Include(wc => wc.Workflow).ThenInclude(w => w.CreatedBy)
+            .Include(wc => wc.Workflow).ThenInclude(w => w.Inputs)
+            .FirstOrDefaultAsync(wc => wc.CategoryId == categoryId, ct);
+        if (wc is null) return null;
+
+        var w = wc.Workflow;
+        return new
+        {
+            id = w.Id,
+            name = w.Name,
+            description = w.Description,
+            isActive = w.IsActive,
+            inputs = w.Inputs.OrderBy(i => i.FieldName).Select(i => new
+            {
+                fieldName = i.FieldName, label = i.Label, type = i.Type, required = i.Required,
+            }),
+        };
+    }
+
+    public async Task<List<object>> GetCategoryOptionsAsync(CancellationToken ct = default)
+    {
+        var cats = await _db.Categories.OrderBy(c => c.Id).ToListAsync(ct);
+        return cats.Select(c => (object)new { id = c.Id, name = c.Name }).ToList();
     }
 }

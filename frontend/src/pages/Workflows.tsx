@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { Topbar } from "./Topbar";
 import { api, type Workflow, type WorkflowSave, type WorkflowStep, type WorkflowInput,
   type WorkflowAuthType, type RunSummary, type RunDetail, type Incident } from "../api";
@@ -10,12 +11,14 @@ import { JsonTable } from "../components/JsonTable";
 // Reporters never see this page; they get rendered output inline in the thread.
 
 export function Workflows() {
+  const { id } = useParams();
   const [tab, setTab] = useState<"workflows" | "runs">("workflows");
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [editing, setEditing] = useState<Workflow | null | "new">(null);
   const [running, setRunning] = useState<Workflow | null>(null);
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
+    const nav = useNavigate();
 
   async function loadWorkflows() {
     setWorkflows(await api.workflows());
@@ -43,7 +46,10 @@ export function Workflows() {
     <div className="app">
       <Topbar title="Workflows" />
       <div className="container">
+
         <div className="tabs" style={{ marginBottom: 14 }}>
+        <button onClick={() => nav(-1)}>← Back</button>
+
           <button className={tab === "workflows" ? "primary" : ""} onClick={() => setTab("workflows")}>Workflows</button>
           <button className={tab === "runs" ? "primary" : ""} onClick={async () => { setTab("runs"); await loadRuns(); }}>Run history</button>
           {tab === "workflows" && (
@@ -54,7 +60,7 @@ export function Workflows() {
         {tab === "workflows" && (
           <table className="admin-table">
             <thead>
-              <tr><th>Name</th><th>Steps</th><th>Inputs</th><th>Status</th><th>Created by</th><th>Actions</th></tr>
+              <tr><th>Name</th><th>Steps</th><th>Inputs</th><th>Categories</th><th>Status</th><th>Created by</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {workflows.map(w => (
@@ -66,6 +72,11 @@ export function Workflows() {
                   <td>{w.stepCount}</td>
                   <td>{w.inputCount}</td>
                   <td>
+                    {w.categories && w.categories.length > 0
+                      ? w.categories.map(c => c.name).join(", ")
+                      : <span style={{ color: "var(--text-soft)", fontSize: 11 }}>—</span>}
+                  </td>
+                  <td>
                     <span className={`pill ${w.isActive ? "Success" : "Closed"}`}>{w.isActive ? "Active" : "Inactive"}</span>
                   </td>
                   <td style={{ color: "var(--text-soft)" }}>{w.createdByFullName}</td>
@@ -76,7 +87,7 @@ export function Workflows() {
                   </td>
                 </tr>
               ))}
-              {workflows.length === 0 && <tr><td colSpan={6} style={{ color: "var(--text-soft)" }}>No workflows yet — create one to get started.</td></tr>}
+              {workflows.length === 0 && <tr><td colSpan={7} style={{ color: "var(--text-soft)" }}>No workflows yet — create one to get started.</td></tr>}
             </tbody>
           </table>
         )}
@@ -130,8 +141,13 @@ function BuilderModal({ workflow, onClose, onSaved }: {
   const [inputs, setInputs] = useState<WorkflowInput[]>(workflow?.inputs ?? []);
   const [steps, setSteps] = useState<StepDraft[]>(
     workflow?.steps?.map(s => ({ ...s, headersText: JSON.stringify(s.headers ?? {}) })) ?? [freshStep()]);
+  const [selectedCategories, setSelectedCategories] = useState<number[]>(
+    workflow?.categories?.map(c => c.id) ?? []);
+  const [allCategories, setAllCategories] = useState<{ id: number; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api.categories().then(setAllCategories).catch(() => {}); }, []);
 
   function save() {
     setError(null);
@@ -163,11 +179,25 @@ function BuilderModal({ workflow, onClose, onSaved }: {
     setBusy(true);
     (async () => {
       try {
-        if (workflow) await api.updateWorkflow(workflow.id, payload);
-        else await api.createWorkflow(payload);
+        let wfId: string;
+        if (workflow) {
+          await api.updateWorkflow(workflow.id, payload);
+          wfId = workflow.id;
+        } else {
+          const r = await api.createWorkflow(payload);
+          wfId = r.id;
+        }
+        // Save category assignments
+        await api.setWorkflowCategories(wfId, selectedCategories);
         onSaved();
       } catch (e: any) { setError(e.message); setBusy(false); }
     })();
+  }
+
+  function toggleCategory(catId: number) {
+    setSelectedCategories(prev =>
+      prev.includes(catId) ? prev.filter(id => id !== catId) : [...prev, catId]
+    );
   }
 
   return (
@@ -211,6 +241,23 @@ function BuilderModal({ workflow, onClose, onSaved }: {
             onMove={dir => setSteps(move(steps, i, dir))} />
         ))}
         <button className="ghost" onClick={() => setSteps([...steps, freshStep()])}>+ Add step</button>
+
+        <p className="panel-title" style={{ marginTop: 12 }}>Default check for categories</p>
+        <p style={{ fontSize: 11, color: "var(--text-soft)", margin: "0 0 6px" }}>
+          When a reporter creates a ticket in a selected category, this workflow is offered automatically.
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {allCategories.map(cat => (
+            <label key={cat.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer",
+              padding: "4px 8px", borderRadius: "var(--radius)",
+              border: `1px solid ${selectedCategories.includes(cat.id) ? "var(--teal)" : "var(--border)"}`,
+              background: selectedCategories.includes(cat.id) ? "#f0fdfa" : "var(--surface)" }}>
+              <input type="checkbox" checked={selectedCategories.includes(cat.id)}
+                onChange={() => toggleCategory(cat.id)} style={{ width: "auto" }} />
+              {cat.name}
+            </label>
+          ))}
+        </div>
 
         {error && <div className="error">{error}</div>}
       </div>

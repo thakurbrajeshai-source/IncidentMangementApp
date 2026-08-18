@@ -174,3 +174,4 @@ D:\IncidentMangementApp\src\backend\obj\Debug\net8.0\refint\IncidentManagement.A
 D:\IncidentMangementApp\src\backend\obj\Debug\net8.0\IncidentManagement.Api.pdb
 D:\IncidentMangementApp\src\backend\obj\Debug\net8.0\IncidentManagement.Api.genruntimeconfig.cache
 D:\IncidentMangementApp\src\backend\obj\Debug\net8.0\ref\IncidentManagement.Api.dll
+D:\IncidentMangementApp\src\backend\obj\Debug\net8.0\IncidentManagement.Api.sourcelink.json

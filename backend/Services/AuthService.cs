@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using IncidentManagement.Api.Domain;
 using IncidentManagement.Api.Infrastructure.Auth;
 using IncidentManagement.Api.Infrastructure.Database;
@@ -17,8 +18,12 @@ public class AuthService
     private readonly AppDbContext _db;
     private readonly IOtpSender _otp;
     private readonly JwtService _jwt;
-    private readonly TestOtpSender? _testOtp; // for the "echo the fixed code" response in dev
+    private readonly TestOtpSender? _testOtp;
     private readonly bool _isDevMode;
+    private readonly int _otpTtlMinutes;
+
+    // Tracks OTP issue time per mobile number for TTL enforcement
+    private static readonly ConcurrentDictionary<string, DateTime> _otpIssuedAt = new();
 
     public AuthService(AppDbContext db, IOtpSender otp, JwtService jwt, IConfiguration cfg)
     {
@@ -27,6 +32,7 @@ public class AuthService
         _jwt = jwt;
         _testOtp = otp as TestOtpSender;
         _isDevMode = cfg.GetValue("Auth:UseTestOtp", true);
+        _otpTtlMinutes = cfg.GetValue("Auth:OtpTtlMinutes", 10);
     }
 
     public record RequestOtpResult(string Mobile, string? DevOtp);
@@ -37,6 +43,7 @@ public class AuthService
         if (norm is null) throw new ArgumentException("Invalid mobile number. Use 10 digits or +E.164.");
         var code = _testOtp?.FixedOtp ?? "123456";
         await _otp.SendAsync(norm, code, ct);
+        _otpIssuedAt[norm] = DateTime.UtcNow;
         // In dev we return the code in the response so the UI can autofill it.
         // In production this should be null.
         return new RequestOtpResult(norm, _isDevMode ? code : null);
@@ -51,6 +58,17 @@ public class AuthService
         var expected = _testOtp?.FixedOtp ?? "123456";
         if (!string.Equals(otp.Trim(), expected, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("Invalid OTP.");
+
+        // Enforce OTP TTL (skip in dev test mode)
+        if (!_isDevMode && _otpIssuedAt.TryGetValue(norm, out var issuedAt))
+        {
+            if ((DateTime.UtcNow - issuedAt).TotalMinutes > _otpTtlMinutes)
+            {
+                _otpIssuedAt.TryRemove(norm, out _);
+                throw new UnauthorizedAccessException($"OTP has expired. Please request a new one.");
+            }
+        }
+        _otpIssuedAt.TryRemove(norm, out _);
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Mobile == norm, ct);
         var isNew = user is null;

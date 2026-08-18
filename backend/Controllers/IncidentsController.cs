@@ -51,14 +51,14 @@ public class IncidentsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
-        var i = await _svc.GetAsync(id, ct);
+        var i = await _svc.GetEntityAsync(id, ct);
         if (i is null) return NotFound();
         // Role-scoped visibility check
         if (Role == "Reporter" && i.ReporterId != Uid) return Forbid();
         if (Role == "Resolver"
             && i.CurrentAssigneeId != Uid
             && i.Status != Domain.IncidentStatus.Open) return Forbid();
-        return Ok(i);
+        return Ok(await _svc.GetAsync(id, ct));
     }
 
     // ----- Reporter actions -------------------------------------------------
@@ -170,14 +170,55 @@ public class IncidentsController : ControllerBase
     /// <summary>Rendered workflow output for a ticket's thread (PRD section 6a).
     /// Same visibility rule as comments: reporter -> own tickets, resolver ->
     /// assigned/@tagged/open-pool, admin -> anything before Closed. Only the
-    /// flattened tables are returned — raw step responses never leave the API.</summary>
+    /// flattened tables are returned — raw step responses never leave the API.
+    /// Respects VisibleInComments flag from WorkflowIncidentAssignment.</summary>
     [HttpGet("{id:guid}/workflow-outputs")]
     public async Task<IActionResult> WorkflowOutputs(Guid id, CancellationToken ct)
     {
-        var i = await _svc.GetAsync(id, ct);
+        var i = await _svc.GetEntityAsync(id, ct);
         if (i is null) return NotFound();
         if (Role == "Reporter" && i.ReporterId != Uid) return Forbid();
         if (Role == "Resolver" && i.CurrentAssigneeId != Uid && i.Status != Domain.IncidentStatus.Open) return Forbid();
         return Ok(await _workflowExec.GetIncidentOutputsAsync(id, ct));
+    }
+
+    // ----- Reporter workflow trigger (PRD 6a) --------------------------------
+
+    [HttpPost("{id:guid}/run-workflow")]
+    public async Task<IActionResult> RunWorkflow(Guid id, [FromBody] RunWorkflowRequest req, CancellationToken ct)
+    {
+        var i = await _svc.GetEntityAsync(id, ct);
+        if (i is null) return NotFound();
+        // Reporter can only trigger on own tickets
+        if (Role == "Reporter" && i.ReporterId != Uid) return Forbid();
+        try
+        {
+            var runId = await _workflowExec.AttachAndRunAsync(id, req.WorkflowId, Uid, req.Inputs ?? new(), ct);
+            return Ok(new { runId, status = "Running" });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    public record RunWorkflowRequest(Guid WorkflowId, Dictionary<string, string>? Inputs);
+
+    // ----- Per-user-per-ticket run count (PRD 6b) ---------------------------
+
+    [HttpGet("{id:guid}/run-count")]
+    public async Task<IActionResult> RunCount(Guid id, CancellationToken ct)
+    {
+        var count = await _workflowExec.GetRunCountAsync(Uid, id, ct);
+        return Ok(new { runCount = count });
+    }
+
+    // ----- Default workflow for a category -----------------------------------
+
+    [HttpGet("default-workflow/{categoryId:int}")]
+    public async Task<IActionResult> DefaultWorkflow(int categoryId, CancellationToken ct)
+    {
+        var svc = HttpContext.RequestServices.GetRequiredService<WorkflowService>();
+        var result = await svc.GetDefaultWorkflowForCategoryAsync(categoryId, ct);
+        return Ok(result);
     }
 }
